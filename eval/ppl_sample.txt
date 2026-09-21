@@ -1,0 +1,123 @@
+The history of computing is, in large part, the history of finding better representations
+for the same underlying information. A number can be written in binary, in decimal, or in
+hexadecimal, and each of these choices carries a different cost in storage while preserving
+exactly the same value. The same principle applies to the weights of a neural network. A
+matrix of thirty thousand rows and four thousand columns occupies a fixed amount of space
+when stored as thirty-two bit floating point numbers, but the amount of information that
+matrix actually carries is usually far smaller than that raw footprint suggests.
+
+Quantization is the practice of exploiting that gap. Instead of storing every weight with
+full precision, we store a low precision code plus enough side information to reconstruct
+an approximation of the original value. The simplest schemes use a single scale factor for
+an entire tensor. More refined schemes divide the tensor into groups and give each group its
+own scale, which costs a few extra bytes but dramatically reduces the reconstruction error
+when the distribution of values varies across the tensor.
+
+Ternary quantization pushes this idea to an extreme. Each weight is constrained to one of
+only three values: negative one, zero, or positive one. Such a weight carries log base two
+of three bits of information, which is approximately one point five eight bits, and that
+number is the one usually quoted when people describe these models. The storage cost is
+slightly different, because the codes are packed two per byte and each group of one hundred
+and twenty eight weights carries a half precision scale. When both contributions are counted
+the effective cost is about two point one two five bits per weight.
+
+The surprising result is that models survive this treatment. A network trained or post
+processed to operate with ternary weights loses some accuracy, but far less than the
+apparent severity of the compression would suggest. The reason is that the redundancy in
+trained weights is enormous. Most of what a trained matrix encodes is a coarse pattern of
+which directions matter, and that pattern survives being rounded to three levels.
+
+A Hadamard transform is an orthogonal change of basis built entirely from plus and minus
+one entries. Applying it costs almost nothing, because it can be computed with additions
+and subtractions alone, and it has the useful property of spreading the energy of a vector
+evenly across all of its coordinates. When the weights of a layer are heavily concentrated
+in a few directions, quantizing them directly produces large errors. Rotating the weight
+matrix into the Hadamard basis first spreads that concentration out, so that no single
+coordinate dominates, and the subsequent rounding error becomes much more uniform and much
+smaller in magnitude.
+
+This is why the rotation and the quantization are designed together rather than separately.
+The rotation is folded into the surrounding computation so that it costs nothing at
+inference time beyond a small number of extra additions on the activations, while the
+weights themselves stay in their compact ternary form. The result is a model that reads
+roughly half as many bytes per token as a four bit quantized model of the same shape.
+
+On a bandwidth limited device, that difference is the whole story. Decoding a single token
+from a dense transformer requires touching every weight in the model exactly once, so the
+time per token is bounded below by the size of the weights divided by the memory bandwidth
+of the device. Cutting the weight traffic in half nearly doubles that bound. This is the
+practical argument for ternary weights, and it is also the reason the measurement that
+matters is not the nominal bit width but the achieved tokens per second on real hardware.
+
+Memory bandwidth itself has a peculiar economics. A modern consumer graphics card can
+perform an enormous number of arithmetic operations per second, but it can only move a
+limited number of bytes from its memory into its cores in the same interval. For small
+batch sizes, which is the normal case for interactive inference, the arithmetic units sit
+mostly idle while the memory system is saturated. Any optimization that reduces bytes moved
+therefore translates directly into throughput, while an optimization that only reduces
+arithmetic may produce no measurable improvement at all.
+
+Speculative decoding attacks the same problem from a different direction. Instead of
+reducing the bytes needed for one token, it tries to produce several tokens for roughly the
+cost of one. A small draft model proposes a short sequence of candidate tokens, and the
+large model then verifies all of them in a single forward pass. Because the verification
+step reads the weights only once regardless of how many candidates are being checked, the
+candidates that the large model accepts are obtained almost for free. The tokens that are
+rejected cost a small amount of wasted work, so the net benefit depends on the acceptance
+rate, which in turn depends on how closely the draft model tracks the large one.
+
+When the draft head is part of the same model rather than a separate network, the proposal
+quality tends to be high, because the draft has access to the same internal representation
+that the main head uses. This arrangement is often called multi token prediction, and it
+typically accepts between half and three quarters of the proposed tokens. At an acceptance
+rate of seventy five percent with a draft length of three, a single verification round
+yields on average two and a quarter tokens, which is a substantial improvement over the one
+token per round that a naive decoder achieves.
+
+Both techniques compose cleanly. Ternary weights reduce the cost of every verification
+round, and speculative decoding reduces the number of rounds needed to produce a given
+number of tokens. A model that uses both can therefore be several times faster than a
+baseline that uses neither, without any change to the underlying mathematics of the
+transformer architecture itself.
+
+The transformer architecture has remained remarkably stable through all of this. An input
+sequence is embedded into a vector space, a series of attention and feed forward blocks
+refine that representation, and a final projection produces a distribution over the
+vocabulary. Attention allows every position to gather information from every other position
+that precedes it, weighted by a compatibility score computed from queries and keys. The
+feed forward blocks then process each position independently. This division of labour,
+mixing across positions and then processing within a position, turns out to be enough to
+support very sophisticated behaviour when the model is large enough and trained on enough
+data.
+
+During generation, the results of the attention computation for previously processed tokens
+are stored in a cache so that they do not need to be recomputed. This cache grows linearly
+with the length of the context, and on a device with limited memory it eventually becomes
+the binding constraint. Storing the cached keys and values at reduced precision extends the
+reachable context length substantially, at the cost of a small amount of additional error
+in the attention scores. Measuring whether that error matters is an empirical question, and
+the usual way to answer it is to place a known fact somewhere in a long document and check
+whether the model can still retrieve it.
+
+Evaluation of a compressed model therefore has two distinct parts. The first is numerical:
+does the model still assign high probability to text it should find predictable, which is
+measured by perplexity on a fixed corpus. The second is behavioural: does the model still
+produce coherent, useful output, and does it still retrieve information from long contexts.
+A compression scheme that passes the first test but fails the second is not useful in
+practice, and a scheme that passes the second but fails the first has usually just been
+evaluated on an easy task.
+
+These two tests are also the ones most likely to reveal a mistake in the implementation
+rather than in the idea. A packing error that swaps two bit fields, or a scale that is read
+from the wrong offset, will usually leave the model able to produce fluent looking text
+while destroying its numerical accuracy almost completely. The perplexity number collapses
+from a small value to something enormous, and that collapse is the signal that the format
+is being interpreted incorrectly somewhere in the pipeline. Conversely, a model that is
+numerically sound but produces repetitive nonsense usually has a bug in the attention mask
+or in the position handling rather than in the weight format.
+
+Getting all of this right is mostly a matter of being careful about definitions. A group
+size, an alignment requirement, a byte order, and the exact convention used for the sign
+of a zero weight are all places where two implementations can disagree while both appearing
+to work. The only reliable way to check is to compare against a reference on real data and
+to insist that the numbers match, not merely that the output looks reasonable.

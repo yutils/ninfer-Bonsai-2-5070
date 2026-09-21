@@ -1,0 +1,11 @@
+/.workbuddy
+/artifacts
+/build
+/models
+/profiles
+/logs
+*.ninfer
+*.gguf
+*.log
+/.idea
+__pycache__/
