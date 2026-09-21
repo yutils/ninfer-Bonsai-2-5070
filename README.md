@@ -9,6 +9,13 @@
 > 只是 `device.h` 缺 Blackwell 的 SM 计数分支、Windows 下又没有 FFmpeg —— 见「四、我为 5070 做的适配」。
 
 ---
+## 省流说明
+- 第一步构建编译，双击 build.bat 等待10分钟。出现build文件夹，并且- build\apps\ninfer-serve.exe等文件齐全就构建成功。
+- 第二步把ternary-bonsai2-27b.ninfer文件放入文件夹，路径是artifacts\ternary-bonsai2-27b.ninfer
+- 第三步双击start-server.bat启动服务。
+- 第四步启动chat.bat 聊天验证
+- 然后就接入各种编程工具测试了。
+
 
 ## 一、一键启动（日常只用两个 bat）
 
