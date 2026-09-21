@@ -81,37 +81,6 @@ formats: {'PQ2_0_G128': 322, 'BF16': 627, 'Q4G64_F16S': 55, ...}
 
 ---
 
-## 三·五、要上传代码，传哪些
-
-**`build/` 不用传** —— 它是 CMake/Ninja 自动生成的（1.31 GiB，`build.bat` 一条命令重建）。同理：
-
-| 目录 | 体积 | 处理 |
-|---|---|---|
-| `build/` | 1.31 GiB | **自动生成，不传** |
-| `artifacts/*.ninfer` | 9.81 GiB | 由 GGUF 打包生成，不传 |
-| `models/` | — | GGUF 源权重（本机已清理），不传 |
-| `profiles/` | — | PPL 报告，不传 |
-| `repo/` | 70 MB | 上游 clone，**只有 3 个文件被我改过** |
-
-真正要传的是根目录这几样，加起来不到 25 KB：
-
-```
-README.md   接入指南.md   .gitignore
-start-server.bat   chat.bat   build.bat   run-ppl.bat
-chat.py   build.sh   eval/ppl_sample.txt
-patches/rtx5070-sm120a.patch     ← 我为 5070 做的 3 处改动，4 KB
-```
-
-`repo/` 二选一：
-
-- **传 patch（推荐）**：上游 `CraneBW/ninfer-ternary-bonsai-ada`，基线 commit `ad6cb46`，
-  应用：`git -C repo apply ../patches/rtx5070-sm120a.patch`
-- 或者 fork 后整个推 `repo/`（70 MB，含 `.git`）
-
-`.gitignore` 已排除 `build/ artifacts/ models/ profiles/ *.ninfer *.gguf`。
-
----
-
 ## 四、我为 5070 做的适配
 
 上游仓库开箱编译在 Windows 上会卡在三处，改动都尽量小：
